@@ -9,14 +9,16 @@ import { getMarkets, getMarket, getMarketHistory, livePriceManager, formatCurren
 // --- Types & Constants ---
 type ViewState = 'LANDING' | 'DASHBOARD';
 
+// Enhanced Categories to match Polymarket
 const CATEGORIES: Category[] = [
-  { id: 'all', label: 'ROOT_ALL', apiTag: null },
-  { id: 'trending', label: 'TRENDING', apiTag: null }, 
-  { id: 'crypto', label: 'CRYPTO', apiTag: 'crypto' },
+  { id: 'trending', label: 'TRENDING', apiTag: null }, // Default high volume
+  { id: 'new', label: 'NEW', apiTag: 'new' }, // Logic handled in service
   { id: 'politics', label: 'POLITICS', apiTag: 'politics' },
+  { id: 'crypto', label: 'CRYPTO', apiTag: 'crypto' },
   { id: 'sports', label: 'SPORTS', apiTag: 'sports' },
   { id: 'business', label: 'BUSINESS', apiTag: 'business' },
   { id: 'science', label: 'SCIENCE', apiTag: 'science' },
+  { id: 'culture', label: 'CULTURE', apiTag: 'pop culture' },
 ];
 
 // --- Live Value Component ---
@@ -39,8 +41,10 @@ const LiveValue: React.FC<{ value: number; formatter: (v: number) => string; cla
     setPrevValue(value);
   }, [value]);
 
+  const isZero = value === 0;
+
   return (
-    <span className={`transition-colors duration-500 ${flash === 'green' ? 'text-matrix-green text-shadow-green' : flash === 'red' ? 'text-red-500 text-shadow-red' : className}`}>
+    <span className={`transition-colors duration-500 ${isZero ? 'text-gray-600' : ''} ${flash === 'green' ? 'text-matrix-green text-shadow-green' : flash === 'red' ? 'text-red-500 text-shadow-red' : className}`}>
       {formatter(value)}
     </span>
   );
@@ -85,10 +89,150 @@ const LandingPage: React.FC<{ onEnter: () => void }> = ({ onEnter }) => {
   );
 };
 
+// --- Market Row Component ---
+const MarketRow: React.FC<{
+  initialMarket: Market;
+  isExpanded: boolean;
+  onToggle: () => void;
+}> = ({ initialMarket, isExpanded, onToggle }) => {
+  const [history, setHistory] = useState<HistoryPoint[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // Use the market passed in props, which might be updated by parent's live feed
+  const market = initialMarket;
+
+  useEffect(() => {
+    if (isExpanded && history.length === 0) {
+      setLoadingHistory(true);
+      // Fetch history for the most liquid token (usually the first one or the one with highest price if we want trend)
+      const tokenId = market.clobTokenIds[0];
+      if (tokenId) {
+        getMarketHistory(tokenId).then(data => {
+            setHistory(data);
+            setLoadingHistory(false);
+        });
+      } else {
+        setLoadingHistory(false);
+      }
+    }
+  }, [isExpanded, market.clobTokenIds]);
+
+  const topOutcome = market.tokens.reduce((prev, current) => (prev.price > current.price) ? prev : current, market.tokens[0] || { price: 0, outcome: 'N/A' });
+
+  return (
+    <div className={`group transition-all duration-300 ${isExpanded ? 'bg-matrix-green/5' : 'hover:bg-white/5'}`}>
+      <div
+        onClick={onToggle}
+        className="grid grid-cols-12 gap-4 p-4 cursor-pointer items-center"
+      >
+        <div className="col-span-12 md:col-span-5 flex items-start gap-3">
+            <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${market.active ? 'bg-matrix-green shadow-[0_0_5px_#00ff41]' : 'bg-gray-600'}`}></div>
+            <div>
+                <div className="text-white text-sm font-bold leading-tight group-hover:text-matrix-green transition-colors">
+                  {market.question}
+                </div>
+                <div className="flex flex-wrap gap-2 mt-2">
+                    {market.featured && <span className="text-[10px] bg-yellow-500/20 text-yellow-500 px-1 rounded border border-yellow-500/50">FEATURED</span>}
+                    {market.new && <span className="text-[10px] bg-blue-500/20 text-blue-500 px-1 rounded border border-blue-500/50">NEW</span>}
+                    <span className="text-[10px] text-gray-500 font-mono">ID: {market.id.substring(0,8)}...</span>
+                </div>
+            </div>
+        </div>
+
+        <div className="hidden md:block col-span-2 text-right">
+             <div className="text-sm font-bold text-white">{topOutcome?.outcome}</div>
+             <div className="text-xs font-mono">
+                <LiveValue value={topOutcome?.price || 0} formatter={formatPercentage} />
+             </div>
+        </div>
+
+        <div className="hidden md:block col-span-2 text-right font-mono">
+             <div className="text-xs text-white">${formatNumber(market.volume24hr)}</div>
+        </div>
+
+        <div className="hidden md:block col-span-2 text-right text-xs text-matrix-dim font-mono">
+             {market.endDate ? new Date(market.endDate).toLocaleDateString() : '---'}
+        </div>
+
+        <div className="hidden md:block col-span-1 text-center">
+            {isExpanded ? <ChevronUp size={16} className="mx-auto text-matrix-green"/> : <ChevronDown size={16} className="mx-auto text-gray-600 group-hover:text-white"/>}
+        </div>
+      </div>
+
+      {/* Expanded Detail View */}
+      {isExpanded && (
+        <div className="border-t border-matrix-dim/30 bg-black/40 p-6 animate-in slide-in-from-top-2 duration-200">
+           <div className="flex flex-col lg:flex-row gap-8">
+               <div className="flex-1 space-y-4">
+                  <div className="h-64 w-full bg-black/50 border border-matrix-dim/30 relative rounded overflow-hidden">
+                      {loadingHistory ? (
+                          <div className="absolute inset-0 flex items-center justify-center text-matrix-green text-xs animate-pulse">LOADING CHART DATA...</div>
+                      ) : history.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={history}>
+                                <defs>
+                                    <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#00ff41" stopOpacity={0.3}/>
+                                    <stop offset="95%" stopColor="#00ff41" stopOpacity={0}/>
+                                    </linearGradient>
+                                </defs>
+                                <XAxis dataKey="t" hide />
+                                <YAxis domain={['auto', 'auto']} hide />
+                                <Tooltip
+                                    contentStyle={{ backgroundColor: '#000', border: '1px solid #00ff41', color: '#00ff41', fontFamily: 'monospace' }}
+                                    formatter={(value: number) => [`${(value * 100).toFixed(1)}%`, 'Probability']}
+                                    labelFormatter={() => ''}
+                                />
+                                <Area type="monotone" dataKey="p" stroke="#00ff41" strokeWidth={2} fillOpacity={1} fill="url(#colorPrice)" />
+                            </AreaChart>
+                        </ResponsiveContainer>
+                      ) : (
+                          <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-xs">NO HISTORICAL DATA AVAILABLE</div>
+                      )}
+                  </div>
+                  <div className="text-xs text-gray-400 font-mono leading-relaxed max-h-40 overflow-y-auto custom-scrollbar p-2 border border-white/5 bg-black">
+                      {market.description}
+                  </div>
+               </div>
+
+               <div className="w-full lg:w-80 shrink-0 space-y-4">
+                  <h4 className="text-xs font-bold text-matrix-green uppercase border-b border-matrix-dim pb-2">Outcome Probabilities</h4>
+                  <div className="space-y-2">
+                      {market.tokens.map(token => (
+                          <div key={token.tokenId} className="flex justify-between items-center p-2 bg-white/5 border border-white/10 hover:border-matrix-green/50 transition-colors">
+                              <span className="text-sm text-white font-medium truncate max-w-[140px]" title={token.outcome}>{token.outcome}</span>
+                              <div className="text-right">
+                                  <LiveValue value={token.price} formatter={formatPercentage} className="font-bold text-matrix-green font-mono" />
+                                  <div className="text-[10px] text-gray-500">
+                                      ID: {token.tokenId.substring(0,4)}
+                                  </div>
+                              </div>
+                          </div>
+                      ))}
+                  </div>
+                  
+                  <div className="pt-4 border-t border-matrix-dim/30">
+                       <a 
+                         href={`https://polymarket.com/market/${market.slug}`} 
+                         target="_blank" 
+                         rel="noopener noreferrer"
+                         className="flex items-center justify-center gap-2 w-full py-2 bg-matrix-green text-black font-bold text-sm uppercase hover:bg-white hover:text-black transition-colors"
+                       >
+                           Trade on Polymarket <ExternalLink size={14}/>
+                       </a>
+                  </div>
+               </div>
+           </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // --- Main Application Component ---
 const App: React.FC = () => {
   const [view, setView] = useState<ViewState>('LANDING');
-  const [activeCategory, setActiveCategory] = useState<string>('all');
+  const [activeCategory, setActiveCategory] = useState<string>('trending'); // Default to trending/top
   const [markets, setMarkets] = useState<Market[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,8 +242,9 @@ const App: React.FC = () => {
   const [wsConnected, setWsConnected] = useState(false);
   
   // Sorting State
+  // Changed default key to 'volume24hr'
   const [sortConfig, setSortConfig] = useState<{ key: keyof Market; direction: 'asc' | 'desc' }>({
-    key: 'volume24hr',
+    key: 'volume24hr', 
     direction: 'desc'
   });
 
@@ -108,7 +253,8 @@ const App: React.FC = () => {
     setError(null);
     try {
       const category = CATEGORIES.find(c => c.id === activeCategory);
-      const data = await getMarkets(category?.apiTag);
+      // Fetch more items to ensure we fill the page with high quality ones
+      const data = await getMarkets(category?.apiTag, 50); 
       setMarkets(data);
     } catch (e: any) {
       console.error("System Failure:", e);
@@ -128,17 +274,21 @@ const App: React.FC = () => {
 
   // --- WebSocket Integration ---
   useEffect(() => {
+    // 1. Subscribe to connection status
+    const cleanupStatus = livePriceManager.onStatusChange((isConnected) => {
+      setWsConnected(isConnected);
+    });
+
+    // 2. Subscribe to prices when markets are loaded
     if (markets.length > 0) {
       // Extract all CLOB token IDs from the top tokens of displayed markets
       const tokensToSubscribe = markets
         .flatMap(m => m.tokens.slice(0, 2)) // Get top 2 tokens per market
         .map(t => t.clobTokenId)
-        .filter(id => id && id.length > 10); // Simple validity check
+        .filter(id => id && id.length > 5); // Basic validity check
 
-      // Connect to WebSocket via Service
       if (tokensToSubscribe.length > 0) {
         livePriceManager.subscribe(tokensToSubscribe, (assetId, price) => {
-          setWsConnected(true);
           // Efficient State Update
           setMarkets(prevMarkets => {
             // Find if this assetId exists in our state
@@ -161,6 +311,8 @@ const App: React.FC = () => {
         });
       }
     }
+    
+    return cleanupStatus;
   }, [markets.length]); 
 
   useEffect(() => {
@@ -221,7 +373,7 @@ const App: React.FC = () => {
             </div>
             <div className="hidden lg:flex items-center gap-4 text-xs text-matrix-dim border-l border-matrix-dim pl-6 h-8">
               <span className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-matrix-green animate-pulse' : 'bg-yellow-600'}`}></div> 
+                <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-matrix-green animate-pulse shadow-[0_0_5px_#00ff41]' : 'bg-red-500 animate-pulse'}`}></div> 
                 {wsConnected ? 'LIVE FEED CONNECTED' : 'INITIALIZING SOCKET...'}
               </span>
               <span>:: {systemTime.toISOString().split('T')[1].split('.')[0]} UTC</span>
@@ -250,7 +402,7 @@ const App: React.FC = () => {
              {markets.length > 0 ? markets.slice(0, 10).map(m => (
                <span key={m.id} className="flex gap-2 items-center">
                  <span className="text-white font-bold">{m.slug.split('-').slice(0,3).join(' ').toUpperCase()}</span> 
-                 <span className="text-matrix-green font-mono">${formatNumber(m.volume24hr)} VOL</span>
+                 <span className="text-matrix-green font-mono">${formatNumber(m.volume)} VOL</span>
                  <LiveValue value={m.tokens[0]?.price} formatter={formatPercentage} className={`${m.tokens[0]?.price > 0.5 ? 'text-green-400' : 'text-red-400'}`} />
                </span>
              )) : <span>INITIALIZING CLOB STREAM...</span>}
@@ -282,7 +434,8 @@ const App: React.FC = () => {
                     {cat.id === 'business' && <DollarSign size={16} />}
                     {cat.id === 'science' && <Cpu size={16} />}
                     {cat.id === 'trending' && <TrendingUp size={16} />}
-                    {cat.id === 'all' && <Terminal size={16} />}
+                    {cat.id === 'new' && <AlertTriangle size={16} />}
+                    {cat.id === 'culture' && <Hash size={16} />}
                     <span className="hidden md:inline tracking-wider">{cat.label}</span>
                   </div>
                 </button>
@@ -292,7 +445,7 @@ const App: React.FC = () => {
             <div className="p-4 border border-matrix-green/30 bg-matrix-green/5 rounded">
               <div className="text-xs text-matrix-green font-bold mb-2 flex items-center gap-2"><Activity size={12}/> MARKET_PULSE</div>
               <div className="text-2xl font-bold text-white mb-1">{formatNumber(totalVol)}</div>
-              <div className="text-[10px] text-matrix-dim">TOTAL 24H VOLUME</div>
+              <div className="text-[10px] text-matrix-dim">TOTAL VOLUME</div>
             </div>
           </div>
         </aside>
@@ -312,9 +465,8 @@ const App: React.FC = () => {
              </div>
              <div className="flex gap-2">
                {[
-                 { label: 'VOL', key: 'volume24hr' },
-                 { label: 'LIQ', key: 'liquidity' },
-                 { label: 'END', key: 'endDate' }
+                 { label: '24H VOL', key: 'volume24hr' },
+                 { label: 'END DATE', key: 'endDate' }
                ].map((opt) => (
                  <button 
                    key={opt.key}
@@ -342,8 +494,8 @@ const App: React.FC = () => {
             <div className="grid grid-cols-12 gap-4 p-4 border-b border-matrix-dim text-[10px] md:text-xs text-matrix-dim font-bold uppercase tracking-[0.1em] bg-matrix-dark/50 shrink-0">
               <div className="col-span-12 md:col-span-5 pl-2">Market Contract</div>
               <div className="hidden md:block col-span-2 text-right">Top Outcome</div>
-              <div className="hidden md:block col-span-2 text-right">Volume (24h)</div>
-              <div className="hidden md:block col-span-2 text-right">Liquidity</div>
+              <div className="hidden md:block col-span-2 text-right">24H Volume</div>
+              <div className="hidden md:block col-span-2 text-right">End Date</div>
               <div className="hidden md:block col-span-1 text-center">Data</div>
             </div>
 
@@ -376,204 +528,6 @@ const App: React.FC = () => {
             </div>
           </div>
         </main>
-      </div>
-    </div>
-  );
-};
-
-// --- Sub-components ---
-
-const MarketRow: React.FC<{ initialMarket: Market; isExpanded: boolean; onToggle: () => void }> = ({ initialMarket, isExpanded, onToggle }) => {
-  const [market, setMarket] = useState(initialMarket);
-  const topToken = market.tokens[0];
-  const topPrice = topToken ? topToken.price : 0;
-  
-  // Fetch history only when expanded to save bandwidth
-  const [history, setHistory] = useState<HistoryPoint[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-
-  // Poll for updates when expanded
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval>;
-    if (isExpanded) {
-      // Immediate fetch for details if needed (and history)
-      if (topToken && history.length === 0) {
-        setLoadingHistory(true);
-        // Ensure we have a token ID before fetching history
-        if (topToken.clobTokenId) {
-            getMarketHistory(topToken.clobTokenId).then(data => {
-            setHistory(data);
-            setLoadingHistory(false);
-            });
-        }
-      }
-
-      // Polling for metadata updates (volume/liquidity) - Price is handled by WS now globally
-      interval = setInterval(async () => {
-        const freshData = await getMarket(market.id);
-        if (freshData) {
-            // Merge fresh metadata with current live prices
-            setMarket(prev => ({
-                ...freshData,
-                tokens: freshData.tokens.map(t => {
-                   // Preserve live price if we have it, otherwise use fresh
-                   // Actually, freshData might be older than WS data, so be careful.
-                   // For now, let's just update metadata like volume.
-                   const existingToken = prev.tokens.find(pt => pt.tokenId === t.tokenId);
-                   return { ...t, price: existingToken ? existingToken.price : t.price };
-                })
-            }));
-        }
-      }, 5000);
-    }
-    return () => clearInterval(interval);
-  }, [isExpanded, market.id, topToken?.clobTokenId]);
-
-  // Sync initial prop updates if they come from main list refresh (which now includes WS data)
-  useEffect(() => {
-    setMarket(initialMarket);
-  }, [initialMarket]);
-
-  return (
-    <div className={`transition-all duration-300 ${isExpanded ? 'bg-matrix-green/5' : 'hover:bg-matrix-dim/5'}`}>
-      {/* Row Header */}
-      <div 
-        onClick={onToggle}
-        className="grid grid-cols-12 gap-4 p-4 items-center cursor-pointer group border-l-2 border-transparent hover:border-matrix-green transition-all relative"
-      >
-        {isExpanded && <div className="absolute left-0 top-0 bottom-0 w-1 bg-matrix-green shadow-[0_0_10px_rgba(0,255,65,0.8)]"></div>}
-        
-        <div className="col-span-12 md:col-span-5 flex items-center gap-4 pl-2">
-           <div className="relative shrink-0">
-             <img src={market.icon || market.image} alt="" className="w-10 h-10 rounded-sm border border-matrix-dim/50 bg-black object-cover grayscale group-hover:grayscale-0 transition-all duration-500" />
-             {market.active && <div className="absolute -top-1 -right-1 w-2 h-2 bg-matrix-green rounded-full animate-pulse shadow-[0_0_5px_rgba(0,255,65,1)]"></div>}
-           </div>
-           <div className="min-w-0">
-              <h4 className={`text-sm font-bold truncate pr-4 transition-colors ${isExpanded ? 'text-matrix-green' : 'text-gray-200 group-hover:text-white'}`}>
-                {market.question}
-              </h4>
-              <div className="flex gap-2 mt-1.5 flex-wrap">
-                 {market.tags.slice(0, 3).map(tag => (
-                   <span key={tag} className="text-[10px] border border-matrix-dim/50 px-1.5 py-0.5 text-matrix-dim uppercase tracking-wider">{tag}</span>
-                 ))}
-                 {market.new && <span className="text-[10px] bg-matrix-green text-black px-1.5 py-0.5 font-bold animate-pulse">NEW</span>}
-              </div>
-           </div>
-        </div>
-
-        <div className="hidden md:flex col-span-2 flex-col items-end">
-           <LiveValue 
-             value={topPrice} 
-             formatter={formatPercentage} 
-             className={`text-lg font-bold font-tech ${topPrice > 0.5 ? 'text-matrix-green' : 'text-yellow-500'}`} 
-           />
-           <span className="text-[10px] text-gray-500 truncate max-w-full">{topToken?.outcome}</span>
-        </div>
-
-        <div className="hidden md:block col-span-2 text-right text-sm text-gray-400 font-mono">
-          <LiveValue value={market.volume24hr} formatter={formatCurrency} />
-        </div>
-
-        <div className="hidden md:block col-span-2 text-right text-sm text-gray-500 font-mono">
-          <LiveValue value={market.liquidity} formatter={formatNumber} />
-        </div>
-
-        <div className="hidden md:flex col-span-1 justify-center">
-          {isExpanded ? <ChevronUp size={16} className="text-matrix-green" /> : <ChevronDown size={16} className="text-matrix-dim" />}
-        </div>
-      </div>
-
-      {/* Expanded Analysis View */}
-      <div className={`overflow-hidden transition-all duration-500 ease-in-out border-b border-matrix-dim/20 ${isExpanded ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'}`}>
-        <div className="p-6 bg-black/40 border-t border-matrix-dim/20 grid grid-cols-1 lg:grid-cols-3 gap-8">
-          
-          {/* Chart Section */}
-          <div className="lg:col-span-2 flex flex-col h-[300px]">
-             <div className="flex justify-between items-center mb-4">
-                <h5 className="text-xs font-bold text-matrix-green uppercase flex items-center gap-2">
-                  <Activity size={14} /> Price Action ({topToken?.outcome})
-                </h5>
-                <div className="text-[10px] text-matrix-dim">INTERVAL: 1H // LIVE CLOB DATA</div>
-             </div>
-             <div className="flex-1 bg-matrix-dark/20 border border-matrix-dim/30 relative rounded-sm p-2">
-                {loadingHistory ? (
-                   <div className="absolute inset-0 flex items-center justify-center text-matrix-dim text-xs animate-pulse">LOADING HISTORICAL DATA...</div>
-                ) : history.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={history}>
-                      <defs>
-                        <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#00ff41" stopOpacity={0.2}/>
-                          <stop offset="95%" stopColor="#00ff41" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: '#000', border: '1px solid #00ff41', color: '#fff', fontSize: '12px' }}
-                        itemStyle={{ color: '#00ff41' }}
-                        formatter={(val: number) => [formatCents(val), 'Price']}
-                        labelFormatter={(t) => new Date(t * 1000).toLocaleTimeString()}
-                      />
-                      <Area type="monotone" dataKey="p" stroke="#00ff41" fillOpacity={1} fill="url(#colorPrice)" strokeWidth={2} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="absolute inset-0 flex items-center justify-center text-matrix-dim text-xs">NO CHART DATA AVAILABLE</div>
-                )}
-             </div>
-          </div>
-
-          {/* Outcomes & Actions Section */}
-          <div className="flex flex-col gap-6">
-             
-             {/* Outcomes List */}
-             <div className="flex-1 overflow-y-auto max-h-[200px] custom-scrollbar pr-2">
-                <h5 className="text-xs font-bold text-white uppercase mb-3 flex items-center gap-2">
-                   <Hash size={14} /> Market Depth
-                </h5>
-                <div className="space-y-2">
-                   {market.tokens.slice(0, 6).map((token) => (
-                     <div key={token.tokenId} className="group">
-                        <div className="flex justify-between text-xs mb-1">
-                           <span className="text-gray-300 group-hover:text-white truncate max-w-[70%]">{token.outcome}</span>
-                           <LiveValue value={token.price} formatter={formatPercentage} className="font-mono" />
-                        </div>
-                        <div className="h-1.5 w-full bg-matrix-dark rounded-full overflow-hidden">
-                           <div 
-                              className="h-full bg-matrix-dim group-hover:bg-matrix-green transition-all duration-300" 
-                              style={{ width: `${token.price * 100}%` }}
-                           ></div>
-                        </div>
-                     </div>
-                   ))}
-                </div>
-             </div>
-
-             {/* Action Buttons */}
-             <div className="space-y-3 pt-4 border-t border-matrix-dim/30">
-                <a 
-                  href={`https://polymarket.com/event/${market.slug}`} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="block w-full text-center py-3 bg-matrix-green text-black font-bold uppercase tracking-widest hover:bg-white transition-colors text-sm shadow-[0_0_15px_rgba(0,255,65,0.4)] hover:shadow-[0_0_25px_rgba(255,255,255,0.6)]"
-                >
-                   Trade on Polymarket <ExternalLink size={14} className="inline ml-1 mb-0.5"/>
-                </a>
-                <div className="grid grid-cols-2 gap-3">
-                   <div className="bg-matrix-dark/40 border border-matrix-dim/30 p-2 text-center">
-                      <div className="text-[10px] text-gray-500 uppercase">Volume</div>
-                      <div className="text-xs font-mono text-white">
-                        <LiveValue value={market.volume} formatter={formatNumber} />
-                      </div>
-                   </div>
-                   <div className="bg-matrix-dark/40 border border-matrix-dim/30 p-2 text-center">
-                      <div className="text-[10px] text-gray-500 uppercase">EndDate</div>
-                      <div className="text-xs font-mono text-white">{market.endDate ? new Date(market.endDate).toLocaleDateString() : 'N/A'}</div>
-                   </div>
-                </div>
-             </div>
-
-          </div>
-        </div>
       </div>
     </div>
   );
