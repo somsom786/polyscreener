@@ -312,7 +312,9 @@ const App: React.FC = () => {
       }
     }
     
-    return cleanupStatus;
+    return () => {
+      cleanupStatus();
+    };
   }, [markets.length]); 
 
   useEffect(() => {
