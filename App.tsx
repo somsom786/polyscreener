@@ -68,10 +68,10 @@ const LandingPage: React.FC<{ onEnter: () => void }> = ({ onEnter }) => {
 
         <div className="border border-matrix-green/50 bg-black/80 p-6 max-w-lg w-full backdrop-blur-sm shadow-[0_0_30px_rgba(0,255,65,0.1)]">
           <div className="flex flex-col space-y-4 text-left text-xs md:text-sm text-green-400 font-tech">
-            <p>> CONNECTING TO CLOB NODES...</p>
-            <p>> PARSING EVENT CONTRACTS...</p>
-            <p>> CALCULATING IMPLIED PROBABILITIES...</p>
-            <p className="text-white animate-pulse">> SYSTEM READY.</p>
+            <p>{'>'} CONNECTING TO CLOB NODES...</p>
+            <p>{'>'} PARSING EVENT CONTRACTS...</p>
+            <p>{'>'} CALCULATING IMPLIED PROBABILITIES...</p>
+            <p className="text-white animate-pulse">{'>'} SYSTEM READY.</p>
           </div>
         </div>
 
@@ -455,7 +455,7 @@ const App: React.FC = () => {
           <div className="flex flex-col md:flex-row justify-between items-end mb-6 gap-4 border-b border-matrix-dim/30 pb-4">
              <div>
                 <h2 className="text-3xl font-bold text-white flex items-center gap-3 mb-2">
-                  <span className="text-matrix-green animate-pulse">></span> 
+                  <span className="text-matrix-green animate-pulse">{'>'}</span> 
                   <GlitchText text={activeCategory.toUpperCase()} />
                 </h2>
                 <div className="text-xs text-matrix-dim font-mono flex gap-4">
