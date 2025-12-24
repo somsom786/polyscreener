@@ -1,0 +1,5 @@
+{
+  "name": "PolyScreener Terminal",
+  "description": "A Matrix-themed, Linux CLI style prediction market screener for Polymarket. Features real-time market data, crypto-native aesthetics, and advanced filtering.",
+  "requestFramePermissions": []
+}
